@@ -124,7 +124,7 @@ app.get('/api/gerk/iskanje', async (req, res) => {
 // POST /api/parcele/iz-gerk  { gerk_pid: "123456" }
 app.post('/api/parcele/iz-gerk', async (req, res) => {
   try {
-    const { gerk_pid } = req.body as { gerk_pid?: string }
+    const { gerk_pid, domace_ime } = req.body as { gerk_pid?: string; domace_ime?: string }
     if (!gerk_pid) {
       res.status(400).json({ error: 'Manjka polje gerk_pid.' })
       return
@@ -151,7 +151,7 @@ app.post('/api/parcele/iz-gerk', async (req, res) => {
     const g = rows[0]
     const povrsina_ha = g.area_m2 / 10000
     const naziv_rabe = g.opis_rabe ?? 'Neznano'
-    const naziv = `${naziv_rabe} (GERK ${g.gerk_pid})`
+    const naziv = domace_ime?.trim() || `${naziv_rabe} (GERK ${g.gerk_pid})`
     const geomJson = g.geojson
 
     await prisma.$executeRaw`

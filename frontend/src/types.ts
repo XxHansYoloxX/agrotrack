@@ -20,6 +20,14 @@ export interface GerkParcela {
   geometry: GeoJsonPolygon
 }
 
+export interface KmgParcela {
+  gerk_pid: string
+  domace_ime: string
+  raba_koda: string
+  raba_opis: string
+  povrsina_m2: number
+}
+
 export interface Kmetija {
   id: string
   ime: string

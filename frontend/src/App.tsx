@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParcele } from './hooks/useParcele'
 import ParcelaMap from './components/ParcelaMap'
 import Sidebar from './components/Sidebar'
-import type { GerkParcela } from './types'
+import type { GerkParcela, KmgParcela } from './types'
 
 export default function App() {
   const { parcele, loading, error, refetch } = useParcele()
@@ -17,6 +17,13 @@ export default function App() {
   const [gerkParcele, setGerkParcele] = useState<GerkParcela[]>([])
   const [gerkIskanje, setGerkIskanje] = useState(false)
   const [searchTrigger, setSearchTrigger] = useState(0)
+
+  // KMG-MID iskanje
+  const [kmgParcele, setKmgParcele] = useState<KmgParcela[]>([])
+  const [kmgGeometries, setKmgGeometries] = useState<GerkParcela[]>([])
+  const [kmgIskanje, setKmgIskanje] = useState(false)
+  const [kmgNapaka, setKmgNapaka] = useState<string | null>(null)
+  const [kmgDodajanje, setKmgDodajanje] = useState(false)
 
   // ── GeoJSON datoteka uvoz ──────────────────────────────────────────────────
   const handleUvozGeojson = async (data: unknown) => {
@@ -86,6 +93,61 @@ export default function App() {
     refetch()
   }
 
+  // ── KMG-MID iskanje parcel ─────────────────────────────────────────────────
+  const handleKmgSearch = async (kmgMid: string) => {
+    setKmgIskanje(true)
+    setKmgNapaka(null)
+    setKmgParcele([])
+    setKmgGeometries([])
+    try {
+      const res = await fetch(`/api/gerk/po-kmg-mid?kmg_mid=${encodeURIComponent(kmgMid)}`)
+      if (!res.ok) {
+        const err = await res.json() as { error?: string }
+        throw new Error(err.error ?? `HTTP ${res.status}`)
+      }
+      const data = await res.json() as KmgParcela[]
+      if (!data.length) { setKmgNapaka('Za ta KMG-MID ni najdenih parcel.'); return }
+      setKmgParcele(data)
+
+      // Naloži geometrije iz lokalne baze
+      const pids = data.map((p) => p.gerk_pid).join(',')
+      const geoRes = await fetch(`/api/gerk/iskanje?gerk_pids=${pids}`)
+      if (geoRes.ok) {
+        const fc = await geoRes.json() as {
+          features: Array<{ properties: Omit<GerkParcela, 'geometry'>; geometry: GerkParcela['geometry'] }>
+        }
+        setKmgGeometries(fc.features.map((f) => ({ ...f.properties, geometry: f.geometry })))
+      }
+    } catch (e) {
+      setKmgNapaka((e as Error).message)
+    } finally {
+      setKmgIskanje(false)
+    }
+  }
+
+  // ── Dodaj vse KMG parcele naenkrat ────────────────────────────────────────
+  const handleKmgDodajVse = async () => {
+    setKmgDodajanje(true)
+    try {
+      let dodanih = 0
+      for (const p of kmgParcele) {
+        const res = await fetch('/api/parcele/iz-gerk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ gerk_pid: p.gerk_pid, domace_ime: p.domace_ime }),
+        })
+        if (res.ok) dodanih++
+      }
+      if (dodanih > 0) refetch()
+      setKmgParcele([])
+      setKmgGeometries([])
+    } catch {
+      // tiha napaka
+    } finally {
+      setKmgDodajanje(false)
+    }
+  }
+
   return (
     <div className="app">
       <header className="header">
@@ -116,11 +178,19 @@ export default function App() {
               gerkCount={gerkParcele.length}
               onUvozGeojson={handleUvozGeojson}
               uvozStanje={{ loading: uvozLoading, sporocilo: uvozSporocilo, napaka: uvozNapaka }}
+              onKmgSearch={handleKmgSearch}
+              kmgIskanje={kmgIskanje}
+              kmgNapaka={kmgNapaka}
+              kmgParcele={kmgParcele}
+              kmgDodajanje={kmgDodajanje}
+              onKmgDodajVse={handleKmgDodajVse}
             />
             <div className="map-container">
               <ParcelaMap
                 parcele={parcele}
                 gerkParcele={gerkParcele}
+                kmgGeometries={kmgGeometries}
+                kmgParcele={kmgParcele}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 onGerkDodaj={handleGerkDodaj}
@@ -140,6 +210,9 @@ export default function App() {
         <span>Moje parcele: {parcele.length}</span>
         {gerkParcele.length > 0 && (
           <span style={{ color: '#93c5fd' }}>GERK: {gerkParcele.length} na karti</span>
+        )}
+        {kmgParcele.length > 0 && (
+          <span style={{ color: '#fca5a5' }}>KMG: {kmgParcele.length} parcel</span>
         )}
         <span>Sprint 2 &mdash; AgroTrack v0.2</span>
       </div>

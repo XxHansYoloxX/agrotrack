@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet'
 import type { Layer } from 'leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { Parcela, GerkParcela } from '../types'
+import type { Parcela, GerkParcela, KmgParcela } from '../types'
 
 // Fix Leaflet default icon paths broken by Vite bundling
 import iconUrl from 'leaflet/dist/images/marker-icon.png'
@@ -14,6 +14,8 @@ L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl })
 interface Props {
   parcele: Parcela[]
   gerkParcele: GerkParcela[]
+  kmgGeometries: GerkParcela[]
+  kmgParcele: KmgParcela[]
   selectedId: string | null
   onSelect: (id: string) => void
   onGerkDodaj: (p: GerkParcela) => Promise<void>
@@ -75,8 +77,9 @@ function buildGerkPopup(gp: GerkParcela, onGerkDodaj: (p: GerkParcela) => Promis
 }
 
 export default function ParcelaMap({
-  parcele, gerkParcele, selectedId, onSelect, onGerkDodaj, searchTrigger, onBbox,
+  parcele, gerkParcele, kmgGeometries, kmgParcele, selectedId, onSelect, onGerkDodaj, searchTrigger, onBbox,
 }: Props) {
+  const kmgMeta = new Map(kmgParcele.map((p) => [p.gerk_pid, p]))
   return (
     <MapContainer
       center={[46.41, 16.15]}
@@ -110,6 +113,31 @@ export default function ParcelaMap({
           }}
         />
       ))}
+
+      {/* KMG parcele — rdeče */}
+      {kmgGeometries.map((gp) => {
+        const meta = kmgMeta.get(gp.gerk_pid)
+        const ha = ((meta?.povrsina_m2 ?? gp.area_m2) / 10000).toFixed(2)
+        const ime = meta?.domace_ime || '—'
+        const raba = meta ? `${meta.raba_koda} ${meta.raba_opis}`.trim() : (gp.opis_rabe ?? '—')
+        return (
+          <GeoJSON
+            key={`kmg-${gp.gerk_pid}`}
+            data={gp.geometry}
+            style={{ color: '#b91c1c', fillColor: '#ef4444', fillOpacity: 0.35, weight: 2 }}
+            onEachFeature={(_f, layer: Layer) => {
+              layer.on('click', (e) => L.DomEvent.stopPropagation(e))
+              layer.bindPopup(
+                `<div style="min-width:160px">` +
+                `<strong>${ime}</strong><br/>` +
+                `Vrsta rabe: ${raba}<br/>` +
+                `Površina: <b>${ha} ha</b>` +
+                `</div>`,
+              )
+            }}
+          />
+        )
+      })}
 
       {/* Kmetove parcele — zelene */}
       {parcele
