@@ -1,11 +1,11 @@
 import { useEffect } from 'react'
-import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet'
-import type { Layer, LeafletMouseEvent } from 'leaflet'
+import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents } from 'react-leaflet'
+import type { Layer } from 'leaflet'
+import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { Parcela } from '../types'
+import type { Parcela, GerkParcela } from '../types'
 
 // Fix Leaflet default icon paths broken by Vite bundling
-import L from 'leaflet'
 import iconUrl from 'leaflet/dist/images/marker-icon.png'
 import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png'
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png'
@@ -13,18 +13,11 @@ L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl })
 
 interface Props {
   parcele: Parcela[]
+  gerkParcele: GerkParcela[]
   selectedId: string | null
   onSelect: (id: string) => void
-}
-
-const CULTURE_COLORS: Record<string, string> = {
-  Koruza: '#f59e0b',
-  Trava: '#22c55e',
-  Zelenjava: '#84cc16',
-}
-
-function defaultColor(kultura: string | null) {
-  return kultura ? (CULTURE_COLORS[kultura] ?? '#3b82f6') : '#6b7280'
+  onMapClick: (bbox: [number, number, number, number]) => void
+  onGerkSelect: (p: GerkParcela) => void
 }
 
 function FitBounds({ parcele }: { parcele: Parcela[] }) {
@@ -40,7 +33,18 @@ function FitBounds({ parcele }: { parcele: Parcela[] }) {
   return null
 }
 
-export default function ParcelaMap({ parcele, selectedId, onSelect }: Props) {
+function MapClickHandler({ onMapClick }: { onMapClick: (bbox: [number, number, number, number]) => void }) {
+  const map = useMapEvents({
+    click() {
+      const b = map.getBounds()
+      onMapClick([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()])
+    },
+  })
+  void map
+  return null
+}
+
+export default function ParcelaMap({ parcele, gerkParcele, selectedId, onSelect, onMapClick, onGerkSelect }: Props) {
   return (
     <MapContainer
       center={[46.38, 15.12]}
@@ -54,6 +58,36 @@ export default function ParcelaMap({ parcele, selectedId, onSelect }: Props) {
         maxZoom={20}
       />
       <FitBounds parcele={parcele} />
+      <MapClickHandler onMapClick={onMapClick} />
+
+      {/* GERK kandidati — modri */}
+      {gerkParcele.map((gp) => (
+        <GeoJSON
+          key={`gerk-${gp.gerk_pid}`}
+          data={gp.geometry}
+          style={{
+            color: '#1d4ed8',
+            fillColor: '#3b82f6',
+            fillOpacity: 0.25,
+            weight: 1.5,
+            dashArray: '4 3',
+          }}
+          onEachFeature={(_feature, layer: Layer) => {
+            layer.on('click', (e) => {
+              L.DomEvent.stopPropagation(e)
+              onGerkSelect(gp)
+            })
+            layer.bindTooltip(
+              `<strong>GERK ${gp.gerk_pid}</strong><br/>` +
+              `${gp.opis_rabe ?? '—'}<br/>` +
+              `${(gp.area_m2 / 10000).toFixed(2)} ha`,
+              { sticky: true }
+            )
+          }}
+        />
+      ))}
+
+      {/* Kmetove parcele — zelene */}
       {parcele
         .filter((p) => p.meja)
         .map((p) => (
@@ -61,16 +95,20 @@ export default function ParcelaMap({ parcele, selectedId, onSelect }: Props) {
             key={p.id}
             data={p.meja!}
             style={{
-              color: selectedId === p.id ? '#1e3a8a' : '#1a2e10',
-              fillColor: defaultColor(p.kultura),
-              fillOpacity: selectedId === p.id ? 0.65 : 0.4,
+              color: selectedId === p.id ? '#14532d' : '#166534',
+              fillColor: selectedId === p.id ? '#16a34a' : '#22c55e',
+              fillOpacity: selectedId === p.id ? 0.65 : 0.45,
               weight: selectedId === p.id ? 3 : 1.5,
             }}
             onEachFeature={(_feature, layer: Layer) => {
-              layer.on('click', (_e: LeafletMouseEvent) => onSelect(p.id))
-              layer.bindTooltip(
-                `<strong>${p.naziv}</strong><br/>${p.kultura ?? '—'}<br/>${p.povrsina} ha`,
-                { sticky: true }
+              layer.on('click', (e) => {
+                L.DomEvent.stopPropagation(e)
+                onSelect(p.id)
+              })
+              layer.bindPopup(
+                `<strong>${p.naziv}</strong><br/>` +
+                `Površina: <b>${Number(p.povrsina).toFixed(2)} ha</b><br/>` +
+                `Vrsta rabe: ${p.kultura ?? '—'}`
               )
             }}
           />

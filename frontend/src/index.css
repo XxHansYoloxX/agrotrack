@@ -62,6 +62,52 @@ html, body, #root {
   color: #2d5a1b;
 }
 
+.uvoz-section {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #dde8d4;
+  background: #f7fbf3;
+}
+
+.uvoz-btn {
+  width: 100%;
+  background: #2d5a1b;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: center;
+}
+
+.uvoz-btn:hover:not(:disabled) {
+  background: #3a7422;
+}
+
+.uvoz-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.uvoz-msg {
+  margin-top: 0.45rem;
+  font-size: 0.75rem;
+  border-radius: 3px;
+  padding: 0.25rem 0.5rem;
+}
+
+.uvoz-msg.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.uvoz-msg.napaka {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .parcela-list {
   list-style: none;
   padding: 0.5rem 0;
@@ -141,4 +187,105 @@ html, body, #root {
   padding: 0.75rem 1rem;
   font-size: 0.85rem;
   border-bottom: 1px solid #fca5a5;
+}
+
+.header-iskanje {
+  margin-left: auto;
+  font-size: 0.8rem;
+  opacity: 0.85;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6 }
+  50%       { opacity: 1   }
+}
+
+/* ── Potrditveni dialog ───────────────────────────────────────────────── */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.dialog {
+  background: #fff;
+  border-radius: 8px;
+  padding: 1.5rem;
+  width: 320px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.dialog-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1a2e10;
+  margin-bottom: 1rem;
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.dialog-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.88rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dialog-label {
+  color: #6b7280;
+}
+
+.dialog-value {
+  font-weight: 600;
+  color: #1a2e10;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.dialog-btn {
+  padding: 0.45rem 1rem;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dialog-btn.cancel {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.dialog-btn.cancel:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.dialog-btn.confirm {
+  background: #2d5a1b;
+  color: #fff;
+}
+
+.dialog-btn.confirm:hover:not(:disabled) {
+  background: #3a7422;
+}
+
+.dialog-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

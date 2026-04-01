@@ -12,6 +12,14 @@ export interface Parcela {
   meja: GeoJsonPolygon | null
 }
 
+export interface GerkParcela {
+  gerk_pid: string
+  raba_id: number | null
+  area_m2: number
+  opis_rabe: string | null
+  geometry: GeoJsonPolygon
+}
+
 export interface Kmetija {
   id: string
   ime: string
