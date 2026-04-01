@@ -1,0 +1,5 @@
+data/
+*.shp
+*.dbf
+*.shx
+*.zip
