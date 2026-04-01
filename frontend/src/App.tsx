@@ -2,25 +2,21 @@ import { useState } from 'react'
 import { useParcele } from './hooks/useParcele'
 import ParcelaMap from './components/ParcelaMap'
 import Sidebar from './components/Sidebar'
-import ConfirmDialog from './components/ConfirmDialog'
 import type { GerkParcela } from './types'
 
 export default function App() {
   const { parcele, loading, error, refetch } = useParcele()
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  // GeoJSON upload stanje
+  // GeoJSON upload
   const [uvozLoading, setUvozLoading] = useState(false)
   const [uvozSporocilo, setUvozSporocilo] = useState<string | null>(null)
   const [uvozNapaka, setUvozNapaka] = useState(false)
 
-  // GERK iskanje stanje
+  // GERK iskanje
   const [gerkParcele, setGerkParcele] = useState<GerkParcela[]>([])
   const [gerkIskanje, setGerkIskanje] = useState(false)
-
-  // Potrditveni dialog
-  const [dialogParcela, setDialogParcela] = useState<GerkParcela | null>(null)
-  const [dialogLoading, setDialogLoading] = useState(false)
+  const [searchTrigger, setSearchTrigger] = useState(0)
 
   // ── GeoJSON datoteka uvoz ──────────────────────────────────────────────────
   const handleUvozGeojson = async (data: unknown) => {
@@ -47,51 +43,47 @@ export default function App() {
     }
   }
 
-  // ── Klik na karto → GERK iskanje po bbox ──────────────────────────────────
-  const handleMapClick = async (bbox: [number, number, number, number]) => {
+  // ── Gumb "Uvozi GERK parcele" → sproži bbox iskanje ───────────────────────
+  const handleGerkUvoz = () => setSearchTrigger((t) => t + 1)
+
+  // ── Klic iz ParcelaMap ko dobi bbox (po triggerju) ─────────────────────────
+  const handleBbox = async (bbox: [number, number, number, number]) => {
     setGerkIskanje(true)
     try {
       const bboxStr = bbox.map((v) => v.toFixed(6)).join(',')
       const res = await fetch(`/api/gerk/iskanje?bbox=${bboxStr}`)
       if (!res.ok) return
-      const fc = await res.json() as { features: Array<{ properties: Omit<GerkParcela, 'geometry'>; geometry: GerkParcela['geometry'] }> }
-      const kandidati = fc.features.map((f) => ({
-        ...f.properties,
-        geometry: f.geometry,
-      }))
-      // Filtriraj tiste, ki jih kmet že ima
+      const fc = await res.json() as {
+        features: Array<{
+          properties: Omit<GerkParcela, 'geometry'>
+          geometry: GerkParcela['geometry']
+        }>
+      }
       const obstojeciGmidi = new Set(parcele.map((p) => p.gmid).filter(Boolean))
-      setGerkParcele(kandidati.filter((k) => !obstojeciGmidi.has(k.gerk_pid)))
+      const kandidati = fc.features
+        .map((f) => ({ ...f.properties, geometry: f.geometry }))
+        .filter((k) => !obstojeciGmidi.has(k.gerk_pid))
+      setGerkParcele(kandidati)
     } catch {
-      // tiho napako ignoriramo — klik je opcijski
+      // tiha napaka — iskanje je opcijsko
     } finally {
       setGerkIskanje(false)
     }
   }
 
-  // ── Potrditev: dodaj GERK parcelo na kmetijo ──────────────────────────────
-  const handlePotrdi = async () => {
-    if (!dialogParcela) return
-    setDialogLoading(true)
-    try {
-      const res = await fetch('/api/parcele/iz-gerk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gerk_pid: dialogParcela.gerk_pid }),
-      })
-      if (!res.ok) {
-        const err = await res.json() as { error?: string }
-        throw new Error(err.error ?? `HTTP ${res.status}`)
-      }
-      // Odstrani iz modrih, dodaj med zelene
-      setGerkParcele((prev) => prev.filter((p) => p.gerk_pid !== dialogParcela.gerk_pid))
-      setDialogParcela(null)
-      refetch()
-    } catch (e) {
-      alert((e as Error).message)
-    } finally {
-      setDialogLoading(false)
+  // ── Potrdi dodajanje GERK parcele na kmetijo ──────────────────────────────
+  const handleGerkDodaj = async (gp: GerkParcela) => {
+    const res = await fetch('/api/parcele/iz-gerk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gerk_pid: gp.gerk_pid }),
+    })
+    if (!res.ok) {
+      const err = await res.json() as { error?: string }
+      throw new Error(err.error ?? `HTTP ${res.status}`)
     }
+    setGerkParcele((prev) => prev.filter((p) => p.gerk_pid !== gp.gerk_pid))
+    refetch()
   }
 
   return (
@@ -102,7 +94,6 @@ export default function App() {
           <h1>AgroTrack</h1>
           <div className="subtitle">Sistem za upravljanje kmetije</div>
         </div>
-        {gerkIskanje && <div className="header-iskanje">Iščem parcele…</div>}
       </header>
 
       {error && (
@@ -120,6 +111,9 @@ export default function App() {
               parcele={parcele}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              onGerkUvoz={handleGerkUvoz}
+              gerkIskanje={gerkIskanje}
+              gerkCount={gerkParcele.length}
               onUvozGeojson={handleUvozGeojson}
               uvozStanje={{ loading: uvozLoading, sporocilo: uvozSporocilo, napaka: uvozNapaka }}
             />
@@ -129,8 +123,9 @@ export default function App() {
                 gerkParcele={gerkParcele}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
-                onMapClick={handleMapClick}
-                onGerkSelect={setDialogParcela}
+                onGerkDodaj={handleGerkDodaj}
+                searchTrigger={searchTrigger}
+                onBbox={handleBbox}
               />
             </div>
           </>
@@ -143,18 +138,11 @@ export default function App() {
           Backend: {error ? 'nedosegljiv' : 'povezan'}
         </span>
         <span>Moje parcele: {parcele.length}</span>
-        {gerkParcele.length > 0 && <span>GERK kandidati: {gerkParcele.length}</span>}
+        {gerkParcele.length > 0 && (
+          <span style={{ color: '#93c5fd' }}>GERK: {gerkParcele.length} na karti</span>
+        )}
         <span>Sprint 2 &mdash; AgroTrack v0.2</span>
       </div>
-
-      {dialogParcela && (
-        <ConfirmDialog
-          parcela={dialogParcela}
-          onPotrdi={handlePotrdi}
-          onZapri={() => setDialogParcela(null)}
-          loading={dialogLoading}
-        />
-      )}
     </div>
   )
 }

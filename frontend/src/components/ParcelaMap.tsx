@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { MapContainer, TileLayer, GeoJSON, useMap, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, GeoJSON, useMap } from 'react-leaflet'
 import type { Layer } from 'leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -16,8 +16,9 @@ interface Props {
   gerkParcele: GerkParcela[]
   selectedId: string | null
   onSelect: (id: string) => void
-  onMapClick: (bbox: [number, number, number, number]) => void
-  onGerkSelect: (p: GerkParcela) => void
+  onGerkDodaj: (p: GerkParcela) => Promise<void>
+  searchTrigger: number
+  onBbox: (bbox: [number, number, number, number]) => void
 }
 
 function FitBounds({ parcele }: { parcele: Parcela[] }) {
@@ -33,21 +34,52 @@ function FitBounds({ parcele }: { parcele: Parcela[] }) {
   return null
 }
 
-function MapClickHandler({ onMapClick }: { onMapClick: (bbox: [number, number, number, number]) => void }) {
-  const map = useMapEvents({
-    click() {
-      const b = map.getBounds()
-      onMapClick([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()])
-    },
-  })
-  void map
+// Ko se searchTrigger povečа → vrne trenutni viewport kot bbox
+function SearchOnTrigger({
+  trigger,
+  onBbox,
+}: {
+  trigger: number
+  onBbox: (bbox: [number, number, number, number]) => void
+}) {
+  const map = useMap()
+  useEffect(() => {
+    if (!trigger) return
+    const b = map.getBounds()
+    onBbox([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()])
+  }, [trigger]) // eslint-disable-line react-hooks/exhaustive-deps
   return null
 }
 
-export default function ParcelaMap({ parcele, gerkParcele, selectedId, onSelect, onMapClick, onGerkSelect }: Props) {
+function buildGerkPopup(gp: GerkParcela, onGerkDodaj: (p: GerkParcela) => Promise<void>): HTMLElement {
+  const ha = (gp.area_m2 / 10000).toFixed(2)
+  const wrap = L.DomUtil.create('div', 'gerk-popup')
+  wrap.innerHTML = `
+    <div class="gerk-popup-title">${gp.opis_rabe ?? '—'}</div>
+    <div class="gerk-popup-ha">Površina: <b>${ha} ha</b></div>
+  `
+  const btn = L.DomUtil.create('button', 'gerk-popup-btn', wrap)
+  btn.textContent = 'Dodaj na mojo kmetijo'
+  L.DomEvent.on(btn, 'click', async () => {
+    ;(btn as HTMLButtonElement).disabled = true
+    btn.textContent = 'Dodajam…'
+    try {
+      await onGerkDodaj(gp)
+    } catch (e) {
+      ;(btn as HTMLButtonElement).disabled = false
+      btn.textContent = 'Dodaj na mojo kmetijo'
+      console.error(e)
+    }
+  })
+  return wrap
+}
+
+export default function ParcelaMap({
+  parcele, gerkParcele, selectedId, onSelect, onGerkDodaj, searchTrigger, onBbox,
+}: Props) {
   return (
     <MapContainer
-      center={[46.38, 15.12]}
+      center={[46.41, 16.15]}
       zoom={13}
       style={{ height: '100%', width: '100%' }}
     >
@@ -58,9 +90,9 @@ export default function ParcelaMap({ parcele, gerkParcele, selectedId, onSelect,
         maxZoom={20}
       />
       <FitBounds parcele={parcele} />
-      <MapClickHandler onMapClick={onMapClick} />
+      <SearchOnTrigger trigger={searchTrigger} onBbox={onBbox} />
 
-      {/* GERK kandidati — modri */}
+      {/* GERK kandidati — modri, s popupom */}
       {gerkParcele.map((gp) => (
         <GeoJSON
           key={`gerk-${gp.gerk_pid}`}
@@ -70,19 +102,11 @@ export default function ParcelaMap({ parcele, gerkParcele, selectedId, onSelect,
             fillColor: '#3b82f6',
             fillOpacity: 0.25,
             weight: 1.5,
-            dashArray: '4 3',
+            dashArray: '5 4',
           }}
-          onEachFeature={(_feature, layer: Layer) => {
-            layer.on('click', (e) => {
-              L.DomEvent.stopPropagation(e)
-              onGerkSelect(gp)
-            })
-            layer.bindTooltip(
-              `<strong>GERK ${gp.gerk_pid}</strong><br/>` +
-              `${gp.opis_rabe ?? '—'}<br/>` +
-              `${(gp.area_m2 / 10000).toFixed(2)} ha`,
-              { sticky: true }
-            )
+          onEachFeature={(_f, layer: Layer) => {
+            layer.on('click', (e) => L.DomEvent.stopPropagation(e))
+            layer.bindPopup(buildGerkPopup(gp, onGerkDodaj), { minWidth: 180 })
           }}
         />
       ))}
@@ -100,7 +124,7 @@ export default function ParcelaMap({ parcele, gerkParcele, selectedId, onSelect,
               fillOpacity: selectedId === p.id ? 0.65 : 0.45,
               weight: selectedId === p.id ? 3 : 1.5,
             }}
-            onEachFeature={(_feature, layer: Layer) => {
+            onEachFeature={(_f, layer: Layer) => {
               layer.on('click', (e) => {
                 L.DomEvent.stopPropagation(e)
                 onSelect(p.id)
