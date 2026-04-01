@@ -258,6 +258,225 @@ app.post('/api/parcele/uvoz-geojson', async (req, res) => {
   }
 })
 
+// ---------- GERK po KMG_MID (WFS getFeature prek GWT-RPC) ----------
+
+const GERK_WFS_URL = 'https://rkg.gov.si/GERK/WebViewer/gerk_viewer/wfs_rpc'
+const GWT_HEADERS = {
+  'Content-Type': 'text/x-gwt-rpc; charset=utf-8',
+  'X-GWT-Permutation': 'C69066397C5A681B7A0C4519075AA9B8',
+  'X-GWT-Module-Base': 'https://rkg.gov.si/GERK/WebViewer/gerk_viewer/',
+}
+
+// GWT Long → Base64 (abeceda: A-Za-z0-9$_)
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789$_'
+function encodeLongB64(v: number): string {
+  if (v === 0) return 'A'
+  let r = ''
+  let n = Math.abs(v)
+  while (n > 0) { r = B64[n % 64] + r; n = Math.floor(n / 64) }
+  return v < 0 ? '!' + r : r
+}
+
+function buildWfsGetFeatureRequest(kmgMid: string): string {
+  const longVal = encodeLongB64(parseInt(kmgMid, 10))
+  return [
+    '7|0|41',
+    'https://rkg.gov.si/GERK/WebViewer/gerk_viewer/',
+    '1EC629073D5DB5D1EA99AECD4FCD88A3',
+    'com.sinergise.common.gis.ogc.wfs.WFSService',
+    'getFeature',
+    'com.sinergise.common.gis.ogc.wfs.request.WFSGetFeatureRequest/950524315',
+    '[Lcom.sinergise.common.gis.filter.FilterDescriptor;/1206055961',
+    'com.sinergise.common.gis.filter.ComparisonOperation/2460168433',
+    'com.sinergise.common.gis.filter.PropertyName/668160754',
+    'KMG_MID',
+    'com.sinergise.common.gis.filter.Literal/1711290897',
+    'com.sinergise.common.util.property.LongProperty/1311190425',
+    'java.lang.Long/4227064769',
+    '[Ljava.util.HashSet;/1212085963',
+    'java.util.HashSet/3273092938',
+    'com.sinergise.common.gis.ogc.OGCRequestContext/2457951422',
+    'com.sinergise.common.util.state.gwt.StateGWT/1610259815',
+    'java.util.LinkedHashMap/3008245022',
+    'java.lang.String/2004016611',
+    '__null_state_',
+    'true',
+    'java.util.HashMap/1797211028',
+    'com.sinergise.common.util.web.HttpMethod/96969396',
+    'REQUEST',
+    'GetFeature',
+    'SERVICE',
+    'WFS',
+    'VERSION',
+    '1.1',
+    'EXCEPTIONS',
+    'INIMAGE',
+    'LOCALE',
+    'sl',
+    'FEATURE_COUNT',
+    '1000',
+    'TYPENAME',
+    'GERK_SDO',
+    'PROPERTYNAME',
+    '',
+    'SORTBY',
+    'MAXQUERYFEATURES',
+    '-2147483648',
+  ].join('|') + '|1|2|3|4|1|5|5|6|1|7|8|9|0|524288|10|11|12|' + longVal +
+    '|0|0|1|13|1|14|0|15|16|17|0|0|17|0|1|18|19|18|20|0|21|0|22|1|16|17|0|0|17|0|10|18|23|18|24|18|25|18|26|18|27|18|28|18|29|18|30|18|31|18|32|18|33|18|34|18|35|18|36|18|37|18|38|18|39|-36|18|40|18|41|0|'
+}
+
+// Iz GWT-RPC odgovora izvleči string tabelo
+// Odgovor vsebuje Infinity, single-quoted stringe in \xHH escape → ni veljavni JSON
+function parseGwtResponse(raw: string): { stringTable: string[] } {
+  if (!raw.startsWith('//OK')) {
+    throw new Error('GWT-RPC napaka: ' + raw.slice(0, 300))
+  }
+
+  // Izvleci string tabelo — poišči zadnji ["..."] pred ,0,7]
+  // Brackets znotraj stringov ignoriramo z iskanjem ',["' vzorca
+  const endMarker = '],0,7]'
+  const endPos = raw.lastIndexOf(endMarker)
+  if (endPos < 0) throw new Error('Konec GWT-RPC odgovora ni najden.')
+
+  // Poišči začetek string tabele: zadnji ',["' pred endPos
+  const stStartMarker = ',["'
+  const stStart = raw.lastIndexOf(stStartMarker, endPos)
+  if (stStart < 0) throw new Error('String tabela ni najdena v GWT-RPC odgovoru.')
+
+  // Pretvori JS \xHH escape v Unicode \u00HH za JSON.parse
+  const stJson = raw.slice(stStart + 1, endPos + 1).replace(/\\x([0-9A-Fa-f]{2})/g, '\\u00$1')
+  const stringTable = JSON.parse(stJson) as string[]
+
+  return { stringTable }
+}
+
+interface GerkParcelaResult {
+  gerk_pid: string
+  domace_ime: string
+  raba_koda: string
+  raba_opis: string
+  povrsina_m2: number
+}
+
+// Iz string tabele GWT-RPC WFS odgovora poišči parcele.
+// Vsak feature ima v string tabeli blok: "@ext:gerk;: PID", DOMACE_IME, ...
+// Stolpci (GERK_PID, DOMACE_IME, RABA_ID_OZN_OPIS, …) so v tabeli pred vrednostmi.
+function parseGerkParcels(st: string[]): GerkParcelaResult[] {
+  const featureIdRe = /^@ext:gerk;:\s*(\d+)$/
+  const rabaRe = /^(\d{4})\(([^)]*)\)\s+(.+)$/
+  const pidRe = /^\d{5,10}$/
+  const coordRe = /^\d+\.\d+,\d+\.\d+$/
+  const distRe = /^[\d.]+\s*m$/
+  const bboxRe = /^\d{5,6}\.\d+$/
+  const skipRe = /Sprememba|kontrole|dolžnosti|Letna|Nov GERK/
+
+  const parcels: GerkParcelaResult[] = []
+  // Privzeta RABA je pred prvim @ext znakom
+  let currentRaba = ''
+  const rabaBeforeFirst = st.find((s) => rabaRe.test(s))
+  if (rabaBeforeFirst) currentRaba = rabaBeforeFirst
+
+  for (let i = 0; i < st.length; i++) {
+    const fm = st[i].match(featureIdRe)
+    if (!fm) continue
+
+    // Zberi stringe do naslednjega @ext ali konca
+    const block: string[] = []
+    for (let j = i + 1; j < st.length; j++) {
+      if (featureIdRe.test(st[j])) break
+      const s = st[j]
+      if (!s.includes('/')) block.push(s)
+    }
+
+    // RABA se pojavi samo ko se spremeni
+    if (block.length > 0 && rabaRe.test(block[0])) {
+      currentRaba = block.shift()!
+    }
+
+    let gerkPid = ''
+    let domaceIme = ''
+
+    for (const s of block) {
+      if (pidRe.test(s) && !gerkPid) { gerkPid = s; continue }
+      if (coordRe.test(s) || distRe.test(s) || bboxRe.test(s)) continue
+      if (/^\d+°$/.test(s) || /^\d+%/.test(s)) continue
+      if (!domaceIme && s.length > 2 && !skipRe.test(s) && !/^\d/.test(s) && !/^(Title|all_|Fetch|Feature|Max|value|null|show|url|tooltip|format|importance|ignore|type|order|index|Property|TRUE|FALSE)/.test(s)) {
+        domaceIme = s
+      }
+    }
+
+    if (!gerkPid) gerkPid = fm[1]
+    const rm = currentRaba.match(rabaRe)
+
+    parcels.push({
+      gerk_pid: gerkPid,
+      domace_ime: domaceIme,
+      raba_koda: rm ? rm[1] : '',
+      raba_opis: rm ? rm[3] : currentRaba,
+      povrsina_m2: 0, // M2 je v payload tokenih, ne v string tabeli
+    })
+  }
+
+  // Dopolni površino iz lokalne baze
+  return parcels
+}
+
+// GET /api/gerk/po-kmg-mid?kmg_mid=100315960
+app.get('/api/gerk/po-kmg-mid', async (req, res) => {
+  try {
+    const kmg_mid = req.query.kmg_mid as string | undefined
+    if (!kmg_mid) {
+      res.status(400).json({ error: 'Manjka parameter kmg_mid.' })
+      return
+    }
+
+    const gwtBody = buildWfsGetFeatureRequest(kmg_mid)
+    const gwtResp = await fetch(GERK_WFS_URL, {
+      method: 'POST',
+      headers: GWT_HEADERS,
+      body: gwtBody,
+    })
+
+    const raw = await gwtResp.text()
+
+    if (req.query.raw === '1') {
+      const parsed = parseGwtResponse(raw)
+      res.json({
+        raw_prefix: raw.slice(0, 2000),
+        string_table: parsed.stringTable,
+        st_count: parsed.stringTable.length,
+      })
+      return
+    }
+
+    const { stringTable } = parseGwtResponse(raw)
+    const parcele = parseGerkParcels(stringTable)
+
+    // Dopolni površino iz lokalne baze gerk_slovenija
+    if (parcele.length > 0) {
+      const pids = parcele.map((p) => parseInt(p.gerk_pid, 10)).filter(Boolean)
+      if (pids.length > 0) {
+        type AreaRow = { gerk_pid: string; area_m2: number }
+        const areaRows = await prisma.$queryRaw<AreaRow[]>`
+          SELECT gerk_pid::text, area_m2::float
+          FROM gerk_slovenija
+          WHERE gerk_pid = ANY(${pids}::bigint[])
+        `
+        const areaMap = new Map(areaRows.map((r) => [r.gerk_pid, r.area_m2]))
+        for (const p of parcele) {
+          p.povrsina_m2 = areaMap.get(p.gerk_pid) ?? 0
+        }
+      }
+    }
+
+    res.json(parcele)
+  } catch (e) {
+    console.error('Napaka GERK po KMG_MID:', e)
+    res.status(500).json({ error: 'Napaka pri poizvedbi GERK po KMG_MID.', details: (e as Error).message })
+  }
+})
+
 // Delavci
 app.get('/api/delavci', async (_req, res) => {
   const delavci = await prisma.delavec.findMany({
