@@ -2,11 +2,15 @@ import { useState } from 'react'
 import { useParcele } from './hooks/useParcele'
 import ParcelaMap from './components/ParcelaMap'
 import Sidebar from './components/Sidebar'
+import Kolobar from './components/Kolobar'
 import type { GerkParcela, KmgParcela } from './types'
+
+type NavPage = 'karta' | 'kolobar'
 
 export default function App() {
   const { parcele, loading, error, refetch } = useParcele()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [activePage, setActivePage] = useState<NavPage>('karta')
 
   // GeoJSON upload
   const [uvozLoading, setUvozLoading] = useState(false)
@@ -156,6 +160,36 @@ export default function App() {
           <h1>AgroTrack</h1>
           <div className="subtitle">Sistem za upravljanje kmetije</div>
         </div>
+        <nav style={{ display: 'flex', gap: '0.5rem', marginLeft: 'auto' }}>
+          <button
+            onClick={() => setActivePage('karta')}
+            style={{
+              padding: '0.5rem 1rem',
+              background: activePage === 'karta' ? '#4f46e5' : 'transparent',
+              color: activePage === 'karta' ? '#fff' : '#6b7280',
+              border: '2px solid ' + (activePage === 'karta' ? '#4f46e5' : '#e5e7eb'),
+              borderRadius: '6px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Karta
+          </button>
+          <button
+            onClick={() => setActivePage('kolobar')}
+            style={{
+              padding: '0.5rem 1rem',
+              background: activePage === 'kolobar' ? '#4f46e5' : 'transparent',
+              color: activePage === 'kolobar' ? '#fff' : '#6b7280',
+              border: '2px solid ' + (activePage === 'kolobar' ? '#4f46e5' : '#e5e7eb'),
+              borderRadius: '6px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Kolobar
+          </button>
+        </nav>
       </header>
 
       {error && (
@@ -167,7 +201,7 @@ export default function App() {
       <div className="main">
         {loading ? (
           <div className="loading">Nalagam parcele&hellip;</div>
-        ) : (
+        ) : activePage === 'karta' ? (
           <>
             <Sidebar
               parcele={parcele}
@@ -199,6 +233,8 @@ export default function App() {
               />
             </div>
           </>
+        ) : (
+          <Kolobar parcele={parcele} />
         )}
       </div>
 

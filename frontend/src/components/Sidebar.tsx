@@ -26,6 +26,7 @@ export default function Sidebar({
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [kmgMid, setKmgMid] = useState('')
+  const selectedParcela = parcele.find((p) => p.id === selectedId) ?? null
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]

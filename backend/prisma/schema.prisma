@@ -56,9 +56,9 @@ model Parcela {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  kmetija       Kmetija        @relation(fields: [kmetijaId], references: [id])
-  kolobarji     Kolobar[]
-  analizeTal    AnalizaTal[]
+  kmetija          Kmetija           @relation(fields: [kmetijaId], references: [id])
+  kolobarPosevki   KolobarPosevek[]
+  analizeTal       AnalizaTal[]
   gnojilniNacrti GnojilniNacrt[]
   delovniNalogi  DelovniNalog[]
 
@@ -118,32 +118,33 @@ model Delavec {
   @@map("delavec")
 }
 
-model Kolobar {
-  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  parcelaId String   @map("parcela_id") @db.Uuid
-  leto      Int
-  opomba    String?
-  createdAt DateTime @default(now()) @map("created_at")
+enum VrstaPosevka {
+  glavni_ozimni
+  glavni_jarni
+  naknadni_prezimni
+  naknadni_neprezimni
+  medsevek
+  pokrovna_kultura
+  trajnica
+  zelenjadnica
 
-  parcela         Parcela          @relation(fields: [parcelaId], references: [id])
-  kolobarPosevki  KolobarPosevek[]
-
-  @@unique([parcelaId, leto])
-  @@map("kolobar")
+  @@map("vrsta_posevka")
 }
 
 model KolobarPosevek {
-  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  kolobarId   String   @map("kolobar_id") @db.Uuid
-  posevek     String
-  sorta       String?
-  datumSetve  DateTime? @map("datum_setve")
-  datumZetve  DateTime? @map("datum_zetve")
-  pridelek    Decimal?  @db.Decimal(10, 2)
-  enota       String?
-  createdAt   DateTime @default(now()) @map("created_at")
+  id             String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelaId      String        @map("parcela_id") @db.Uuid
+  leto           Int
+  vrstaPosevka   VrstaPosevka  @map("vrsta_posevka")
+  kultura        String
+  datumSetve     DateTime?     @map("datum_setve") @db.Date
+  datumSpravila  DateTime?     @map("datum_spravila") @db.Date
+  pridelekTha    Decimal?      @map("pridelek_tha") @db.Decimal(10, 2)
+  opomba         String?
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  kolobar Kolobar @relation(fields: [kolobarId], references: [id])
+  parcela Parcela @relation(fields: [parcelaId], references: [id])
 
   @@map("kolobar_posevek")
 }

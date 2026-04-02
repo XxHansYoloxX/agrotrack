@@ -477,6 +477,163 @@ app.get('/api/gerk/po-kmg-mid', async (req, res) => {
   }
 })
 
+// ── Kolobar (crop rotation) ──────────────────────────────────────────────────
+
+// GET /api/kolobar?parcela_id=X nebo parcela_ids=X,Y,Z&leto=2025
+app.get('/api/kolobar', async (req, res) => {
+  try {
+    const { parcela_id, parcela_ids, leto } = req.query as {
+      parcela_id?: string
+      parcela_ids?: string
+      leto?: string
+    }
+
+    // Bulk query - vrne grupiran objekt po parcela_id
+    if (parcela_ids) {
+      const ids = parcela_ids.split(',')
+      const where: any = { parcelaId: { in: ids } }
+      if (leto) where.leto = parseInt(leto, 10)
+
+      const posevki = await prisma.kolobarPosevek.findMany({
+        where,
+        orderBy: [{ leto: 'desc' }, { createdAt: 'asc' }],
+      })
+
+      // Grupiranje po parcela_id
+      const grouped: Record<string, any[]> = {}
+      for (const p of posevki) {
+        if (!grouped[p.parcelaId]) grouped[p.parcelaId] = []
+        grouped[p.parcelaId].push(p)
+      }
+      res.json(grouped)
+      return
+    }
+
+    // Single query - vrne array
+    if (!parcela_id) {
+      res.status(400).json({ error: 'Manjka parameter parcela_id ali parcela_ids.' })
+      return
+    }
+    const where: { parcelaId: string; leto?: number } = { parcelaId: parcela_id }
+    if (leto) where.leto = parseInt(leto, 10)
+
+    const posevki = await prisma.kolobarPosevek.findMany({
+      where,
+      orderBy: [{ leto: 'desc' }, { createdAt: 'asc' }],
+    })
+    res.json(posevki)
+  } catch (e) {
+    console.error('Napaka pri branju kolobarja:', e)
+    res.status(500).json({ error: 'Interna napaka strežnika.' })
+  }
+})
+
+// POST /api/kolobar — single or bulk insert
+app.post('/api/kolobar', async (req, res) => {
+  try {
+    const body = req.body as {
+      parcela_id?: string
+      parcela_ids?: string[]
+      leto?: number
+      vrsta_posevka?: string
+      kultura?: string
+      datum_setve?: string
+      datum_spravila?: string
+      pridelek_tha?: number
+      opomba?: string
+    }
+
+    if (!body.leto || !body.vrsta_posevka || !body.kultura) {
+      res.status(400).json({ error: 'Manjkajo obvezna polja: leto, vrsta_posevka, kultura.' })
+      return
+    }
+
+    // Bulk insert
+    if (body.parcela_ids && body.parcela_ids.length > 0) {
+      const created = await prisma.kolobarPosevek.createMany({
+        data: body.parcela_ids.map((pid) => ({
+          parcelaId: pid,
+          leto: body.leto!,
+          vrstaPosevka: body.vrsta_posevka as any,
+          kultura: body.kultura!,
+          datumSetve: body.datum_setve ? new Date(body.datum_setve) : null,
+          datumSpravila: body.datum_spravila ? new Date(body.datum_spravila) : null,
+          pridelekTha: body.pridelek_tha ?? null,
+          opomba: body.opomba ?? null,
+        })),
+      })
+      res.json({ count: created.count })
+      return
+    }
+
+    // Single insert
+    if (!body.parcela_id) {
+      res.status(400).json({ error: 'Manjka parcela_id ali parcela_ids.' })
+      return
+    }
+
+    const posevek = await prisma.kolobarPosevek.create({
+      data: {
+        parcelaId: body.parcela_id,
+        leto: body.leto,
+        vrstaPosevka: body.vrsta_posevka as any,
+        kultura: body.kultura,
+        datumSetve: body.datum_setve ? new Date(body.datum_setve) : null,
+        datumSpravila: body.datum_spravila ? new Date(body.datum_spravila) : null,
+        pridelekTha: body.pridelek_tha ?? null,
+        opomba: body.opomba ?? null,
+      },
+    })
+    res.json(posevek)
+  } catch (e) {
+    console.error('Napaka pri dodajanju posevka:', e)
+    res.status(500).json({ error: 'Interna napaka strežnika.' })
+  }
+})
+
+// PUT /api/kolobar/:id
+app.put('/api/kolobar/:id', async (req, res) => {
+  try {
+    const body = req.body as {
+      leto?: number
+      vrsta_posevka?: string
+      kultura?: string
+      datum_setve?: string
+      datum_spravila?: string
+      pridelek_tha?: number
+      opomba?: string
+    }
+
+    const posevek = await prisma.kolobarPosevek.update({
+      where: { id: req.params.id },
+      data: {
+        leto: body.leto,
+        vrstaPosevka: body.vrsta_posevka as any,
+        kultura: body.kultura,
+        datumSetve: body.datum_setve ? new Date(body.datum_setve) : null,
+        datumSpravila: body.datum_spravila ? new Date(body.datum_spravila) : null,
+        pridelekTha: body.pridelek_tha,
+        opomba: body.opomba,
+      },
+    })
+    res.json(posevek)
+  } catch (e) {
+    console.error('Napaka pri posodabljanju posevka:', e)
+    res.status(500).json({ error: 'Interna napaka strežnika.' })
+  }
+})
+
+// DELETE /api/kolobar/:id
+app.delete('/api/kolobar/:id', async (req, res) => {
+  try {
+    await prisma.kolobarPosevek.delete({ where: { id: req.params.id } })
+    res.json({ ok: true })
+  } catch (e) {
+    console.error('Napaka pri brisanju posevka:', e)
+    res.status(500).json({ error: 'Interna napaka strežnika.' })
+  }
+})
+
 // Delavci
 app.get('/api/delavci', async (_req, res) => {
   const delavci = await prisma.delavec.findMany({
